@@ -116,17 +116,18 @@ h1 { margin: 0; font: 800 clamp(3.2rem, 8vw, 6.8rem)/.9 'Fraunces', Georgia, ser
 .has-sound-groups .sound-segment.is-hold.is-passed { background: var(--green); }
 .has-sound-groups .sound-segment.is-quick.is-passed { background: #b94d3c; }
 .slider-progress { position: absolute; z-index: 1; width: var(--sound-track-width, 100%); height: .82rem; left: -.03rem; top: 1.41rem; border-radius: 1rem; background: var(--green); transform-origin: left center; }
-.slider-marker { position: absolute; z-index: 2; left: var(--marker-position); width: 3rem; height: 2.35rem; top: 2.87rem; border: .18rem solid #fffaf0; border-radius: .82rem .82rem 1.05rem 1.05rem; background: #3f7393; box-shadow: inset 0 .16rem 0 color-mix(in oklch, #fffaf0 28%, transparent), 0 .24rem 0 #28536d, 0 .48rem .7rem color-mix(in oklch, var(--ink) 22%, transparent); opacity: 1; transform: translateX(-50%); transform-origin: center bottom; pointer-events: none; transition: opacity .22s cubic-bezier(.25, 1, .5, 1), transform .22s cubic-bezier(.25, 1, .5, 1), background .18s ease-out, box-shadow .16s ease-out; }
+.slider-marker { position: absolute; z-index: 2; left: var(--marker-position); width: 3rem; height: 2.35rem; top: 2.87rem; border: .18rem solid #fffaf0; border-radius: .82rem .82rem 1.05rem 1.05rem; background: #3f7393; box-shadow: inset 0 .16rem 0 color-mix(in oklch, #fffaf0 28%, transparent), 0 .24rem 0 #28536d, 0 .48rem .7rem color-mix(in oklch, var(--ink) 22%, transparent); opacity: 1; transform: translateX(calc(-50% + var(--back-pull, 0px))); transform-origin: center bottom; pointer-events: none; transition: opacity .22s cubic-bezier(.25, 1, .5, 1), transform .22s cubic-bezier(.25, 1, .5, 1), background .18s ease-out, box-shadow .16s ease-out; }
 .slider-marker::before { content: ''; position: absolute; z-index: -1; width: .48rem; height: .68rem; left: 50%; top: -.68rem; border-radius: .3rem .3rem 0 0; background: #3f7393; box-shadow: inset .12rem 0 0 color-mix(in oklch, #fffaf0 18%, transparent); transform: translateX(-50%); }
 .slider-marker i { position: absolute; width: .19rem; height: .72rem; border-radius: 1rem; background: #dcebf0; top: .62rem; left: calc(50% - .095rem); box-shadow: -.48rem 0 0 #dcebf0, .48rem 0 0 #dcebf0; }
 .slider-wrap input { position: absolute; z-index: 3; inset-block: 0; left: 0; width: var(--sound-track-width, 100%); height: 100%; margin: 0; opacity: 0; cursor: grab; touch-action: pan-y; -webkit-tap-highlight-color: transparent; }
 .slider-wrap input:active { cursor: grabbing; }
 .slider-wrap:has(input:focus-visible) { outline: 3px solid #157ca0; outline-offset: 3px; }
-.slider-wrap:has(input:active) .slider-marker { box-shadow: inset 0 .12rem 0 color-mix(in oklch, #fffaf0 22%, transparent), 0 .1rem 0 #28536d, 0 .22rem .36rem color-mix(in oklch, var(--ink) 20%, transparent); transform: translateX(-50%) translateY(.14rem) scale(.97); }
-.word-unit.is-returning .slider-marker { transition: left .38s cubic-bezier(.22, 1, .36, 1), opacity .22s cubic-bezier(.25, 1, .5, 1), transform .22s cubic-bezier(.25, 1, .5, 1); }
+.slider-wrap:has(input:active) .slider-marker { box-shadow: inset 0 .12rem 0 color-mix(in oklch, #fffaf0 22%, transparent), 0 .1rem 0 #28536d, 0 .22rem .36rem color-mix(in oklch, var(--ink) 20%, transparent); transform: translateX(calc(-50% + var(--back-pull, 0px))) translateY(.14rem) scale(.97); }
+.word-unit.is-pulling-back .slider-marker { transition: transform .08s linear, box-shadow .16s ease-out; }
+.word-unit.is-returning .slider-marker { transition: left .3s cubic-bezier(.22, 1, .36, 1), opacity .22s cubic-bezier(.25, 1, .5, 1), transform .22s cubic-bezier(.25, 1, .5, 1); }
 .word-unit:not(.is-active) input { cursor: default; }
 .word-unit.is-complete .slider-marker { background: var(--green); }
-.word-unit:not(.is-active) .slider-marker { opacity: 0; transform: translateX(-50%) translateY(.6rem) scale(.9); }
+.word-unit:not(.is-active) .slider-marker { opacity: 0; transform: translateX(calc(-50% + var(--back-pull, 0px))) translateY(.6rem) scale(.9); }
 .word-unit.is-complete .slider-progress { background: var(--green); }
 .sentence-done { min-height: 7.5rem; margin-top: clamp(3.5rem, 9vh, 6rem); display: flex; gap: 1rem; align-items: center; opacity: 0; transform: translateY(.8rem); pointer-events: none; transition: opacity .35s ease-out, transform .35s ease-out; }
 .sentence-done.visible { opacity: 1; transform: none; pointer-events: auto; }

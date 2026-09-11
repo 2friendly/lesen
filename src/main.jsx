@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import './styles.css'
 import { earlyReaderCueGroups, earlyReaderSoundTiming, earlyReaderWordFeatures, levels, stories } from './stories'
 
+const WORD_COMPLETE_THRESHOLD = 94
+
 const Chevron = ({ direction = 'right' }) => (
   <svg aria-hidden="true" viewBox="0 0 24 24" className={`icon icon-${direction}`}>
     <path d="m9 5 7 7-7 7" />
@@ -184,7 +186,8 @@ function Reader({ story, onClose }) {
     const value = Number(rawValue)
     setPositions((current) => ({ ...current, [index]: value }))
 
-    if (value >= 99.5 && index === wordIndex) {
+    if (value >= WORD_COMPLETE_THRESHOLD && index === wordIndex) {
+      setPositions((current) => ({ ...current, [index]: 100 }))
       if (index < words.length - 1) {
         setWordIndex(index + 1)
         requestAnimationFrame(() => inputRefs.current[index + 1]?.focus())
@@ -192,6 +195,20 @@ function Reader({ story, onClose }) {
         setFinished(true)
       }
     }
+  }
+
+  const moveToPreviousWord = (index) => {
+    if (index !== wordIndex || index <= 0) return
+
+    const previousIndex = index - 1
+    setFinished(false)
+    setPositions((current) => ({
+      ...current,
+      [index]: 0,
+      [previousIndex]: 100,
+    }))
+    setWordIndex(previousIndex)
+    requestAnimationFrame(() => inputRefs.current[previousIndex]?.focus())
   }
 
   const nextSentence = () => {
@@ -250,6 +267,7 @@ function Reader({ story, onClose }) {
               practiceMode={mode}
               value={positions[index] ?? 0}
               onChange={moveMarker}
+              onPrevious={moveToPreviousWord}
               inputRef={(element) => { inputRefs.current[index] = element }}
             />
           ))}
@@ -270,7 +288,7 @@ function Reader({ story, onClose }) {
   )
 }
 
-function WordSlider({ word, index, active, complete, cueing, practiceMode, value, onChange, inputRef }) {
+function WordSlider({ word, index, active, complete, cueing, practiceMode, value, onChange, onPrevious, inputRef }) {
   const wordParts = word.match(/^([^\p{L}\p{N}]*)([\p{L}\p{N}'’-]+)([^\p{L}\p{N}]*)$/u)
   const [, prefix = '', readableWord = word, suffix = ''] = wordParts ?? []
   const normalizedWord = readableWord.toLowerCase()
@@ -314,6 +332,8 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
   ))
   const [cueIndex, setCueIndex] = useState(0)
   const [returning, setReturning] = useState(false)
+  const [backPull, setBackPull] = useState(0)
+  const backGestureRef = useRef(null)
   const currentSoundTiming = soundTimings[cueIndex]
   let trailingSilentLength = 0
   if (hasSoundCues) {
@@ -332,7 +352,7 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
   const moveWithCue = (rawValue) => {
     const nextValue = Number(rawValue)
 
-    if (hasSoundCues && cuePositions.length) {
+    if (hasSoundCues && cuePositions.length > 1) {
       let nearestIndex = 0
       let nearestDistance = Number.POSITIVE_INFINITY
 
@@ -350,18 +370,50 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
     onChange(index, nextValue)
   }
 
-  const pullMarkerBack = () => {
-    if (!active || value <= 0 || value >= 99.5) return
-    setReturning(true)
+  const pullMarkerBack = (rawValue = value) => {
+    if (!active) return
+
+    const releaseValue = Number(rawValue)
+    if (releaseValue >= WORD_COMPLETE_THRESHOLD) return
+
+    setReturning(releaseValue > .1)
     setCueIndex(0)
     onChange(index, 0)
   }
 
+  const beginDrag = (event) => {
+    setReturning(false)
+    setBackPull(0)
+    backGestureRef.current = { pointerId: event.pointerId, used: false }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
+  const trackBackGesture = (event) => {
+    if (!active || index === 0 || backGestureRef.current?.used) return
+
+    const trackStart = event.currentTarget.getBoundingClientRect().left
+    const overshoot = Math.max(0, trackStart - event.clientX)
+    setBackPull(-Math.min(18, overshoot * .45))
+
+    if (overshoot >= 40) {
+      backGestureRef.current.used = true
+      setBackPull(0)
+      onPrevious(index)
+    }
+  }
+
+  const endDrag = (event) => {
+    setBackPull(0)
+    backGestureRef.current = null
+    pullMarkerBack(event.currentTarget.value)
+  }
+
   return (
     <div
-      className={`word-unit ${practiceMode === 'sound' ? 'is-sound-practice' : ''} ${active ? 'is-active' : ''} ${complete ? 'is-complete' : ''} ${returning ? 'is-returning' : ''}`}
+      className={`word-unit ${practiceMode === 'sound' ? 'is-sound-practice' : ''} ${active ? 'is-active' : ''} ${complete ? 'is-complete' : ''} ${returning ? 'is-returning' : ''} ${backPull < 0 ? 'is-pulling-back' : ''}`}
       style={{
         '--marker-position': `${value * soundedWidthRatio}%`,
+        '--back-pull': `${backPull}px`,
         '--sound-track-width': `${soundedWidthRatio * 100}%`,
         '--sound-path-width': currentSoundTiming === 'quick' ? '5.25rem' : '8.25rem',
       }}
@@ -417,17 +469,19 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
           aria-label={`Read the word ${readableWord}`}
           aria-describedby="reading-instruction"
           aria-valuetext={sliderValueText}
-          onPointerDown={() => setReturning(false)}
-          onPointerUp={pullMarkerBack}
-          onPointerCancel={pullMarkerBack}
-          onBlur={pullMarkerBack}
+          onPointerDown={beginDrag}
+          onPointerMove={trackBackGesture}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onBlur={(event) => pullMarkerBack(event.currentTarget.value)}
           onChange={(event) => moveWithCue(event.target.value)}
           onKeyDown={(event) => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
             event.preventDefault()
             if (event.key === 'Home') moveWithCue(0)
             if (event.key === 'End') moveWithCue(100)
-            if (event.key === 'ArrowLeft') moveWithCue(Math.max(0, value - 10))
+            if (event.key === 'ArrowLeft' && value <= 0 && index > 0) onPrevious(index)
+            else if (event.key === 'ArrowLeft') moveWithCue(Math.max(0, value - 10))
             if (event.key === 'ArrowRight') moveWithCue(Math.min(100, value + 10))
           }}
         />
