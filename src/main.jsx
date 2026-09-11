@@ -391,7 +391,9 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
   const trackBackGesture = (event) => {
     if (!active || index === 0 || backGestureRef.current?.used) return
 
-    const trackStart = event.currentTarget.getBoundingClientRect().left
+    const inputBounds = event.currentTarget.getBoundingClientRect()
+    const inputPadding = Number.parseFloat(window.getComputedStyle(event.currentTarget).paddingLeft) || 0
+    const trackStart = inputBounds.left + inputPadding
     const overshoot = Math.max(0, trackStart - event.clientX)
     setBackPull(-Math.min(18, overshoot * .45))
 

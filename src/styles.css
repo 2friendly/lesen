@@ -152,14 +152,19 @@ h1 { margin: 0; font: 800 clamp(3.2rem, 8vw, 6.8rem)/.9 'Fraunces', Georgia, ser
   .reader-tip { display: none; }
 }
 
-@media (pointer: coarse) {
-  .slider-wrap { min-width: 5rem; height: 6.4rem; }
-  .slider-rail { height: 1.72rem; top: 1.14rem; padding: .31rem .46rem; }
-  .slider-progress { height: .9rem; top: 1.55rem; }
-  .slider-marker { width: 3.65rem; height: 2.85rem; top: 3.1rem; border-width: .2rem; border-radius: 1rem 1rem 1.3rem 1.3rem; }
-  .slider-marker::before { width: .58rem; height: .76rem; top: -.76rem; }
-  .slider-marker i { width: .22rem; height: .9rem; top: .72rem; left: calc(50% - .11rem); box-shadow: -.58rem 0 0 #dcebf0, .58rem 0 0 #dcebf0; }
-  .word-line { column-gap: clamp(1.75rem, 4vw, 3rem); row-gap: clamp(3.25rem, 7vh, 5rem); }
+@media (pointer: coarse), (hover: none), (max-width: 1200px) {
+  .slider-wrap { min-width: 6.25rem; height: 7.6rem; }
+  .slider-rail { height: 1.88rem; top: 1.2rem; padding: .34rem .5rem; }
+  .slider-progress { height: 1rem; top: 1.64rem; }
+  .slider-marker { width: 5rem; height: 3.75rem; top: 3.5rem; border-width: .23rem; border-radius: 1.2rem 1.2rem 1.55rem 1.55rem; }
+  .slider-marker::before { width: .72rem; height: .92rem; top: -.92rem; border-radius: .42rem .42rem 0 0; }
+  .slider-marker i { width: .26rem; height: 1.18rem; top: .92rem; left: calc(50% - .13rem); box-shadow: -.78rem 0 0 #dcebf0, .78rem 0 0 #dcebf0; }
+  .slider-wrap input { left: -2.75rem; width: calc(var(--sound-track-width, 100%) + 5.5rem); padding-inline: 2.75rem; -webkit-appearance: none; appearance: none; }
+  .slider-wrap input::-webkit-slider-runnable-track { height: 100%; background: transparent; }
+  .slider-wrap input::-webkit-slider-thumb { width: 5.5rem; height: 5.5rem; -webkit-appearance: none; appearance: none; background: transparent; border: 0; }
+  .slider-wrap input::-moz-range-track { height: 100%; background: transparent; border: 0; }
+  .slider-wrap input::-moz-range-thumb { width: 5.5rem; height: 5.5rem; background: transparent; border: 0; }
+  .word-line { column-gap: clamp(2rem, 4.5vw, 3.4rem); row-gap: clamp(4.1rem, 8vh, 5.8rem); }
 }
 
 @media (min-width: 701px) and (max-width: 1100px) {
