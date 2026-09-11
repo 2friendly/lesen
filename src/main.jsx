@@ -153,6 +153,9 @@ function Reader({ story, onClose }) {
   const readingStageRef = useRef(null)
   const continuousDragRef = useRef(null)
   const returnTimerRef = useRef(null)
+  const positionsRef = useRef({})
+  const wordIndexRef = useRef(0)
+  const markerMotionRef = useRef({ frame: null, index: null, target: 0, speed: 60, lastTime: null })
   const sentence = story.sentences[sentenceIndex]
   const words = sentence.split(/\s+/)
   const mode = story.mode ?? 'story'
@@ -172,14 +175,21 @@ function Reader({ story, onClose }) {
 
   useEffect(() => {
     window.clearTimeout(returnTimerRef.current)
+    window.cancelAnimationFrame(markerMotionRef.current.frame)
+    markerMotionRef.current = { frame: null, index: null, target: 0, speed: 60, lastTime: null }
     continuousDragRef.current = null
+    positionsRef.current = {}
+    wordIndexRef.current = 0
     setReturningWordIndex(null)
     setWordIndex(0)
     setPositions({})
     setFinished(false)
     requestAnimationFrame(() => inputRefs.current[0]?.focus())
 
-    return () => window.clearTimeout(returnTimerRef.current)
+    return () => {
+      window.clearTimeout(returnTimerRef.current)
+      window.cancelAnimationFrame(markerMotionRef.current.frame)
+    }
   }, [sentenceIndex])
 
   const speakSentence = () => {
@@ -191,12 +201,17 @@ function Reader({ story, onClose }) {
     }
   }
 
-  const moveMarker = (index, rawValue) => {
-    const value = Number(rawValue)
-    setPositions((current) => ({ ...current, [index]: value }))
+  const writeMarkerPosition = (index, value) => {
+    const nextPositions = { ...positionsRef.current, [index]: value }
+    positionsRef.current = nextPositions
+    setPositions(nextPositions)
+  }
 
-    if (value >= WORD_COMPLETE_THRESHOLD && index === wordIndex) {
-      setPositions((current) => ({ ...current, [index]: 100 }))
+  const applyMarkerPosition = (index, value) => {
+    writeMarkerPosition(index, value)
+
+    if (value >= WORD_COMPLETE_THRESHOLD && index === wordIndexRef.current) {
+      writeMarkerPosition(index, 100)
       if (index < words.length - 1) {
         const gesture = continuousDragRef.current
         const activePointerId = continuousDragRef.current?.pointerId
@@ -210,13 +225,81 @@ function Reader({ story, onClose }) {
         if (gesture) {
           gesture.pendingIndex = index + 1
         } else {
+          wordIndexRef.current = index + 1
           setWordIndex(index + 1)
           requestAnimationFrame(() => inputRefs.current[index + 1]?.focus())
         }
       } else {
         setFinished(true)
       }
+      return true
     }
+
+    return false
+  }
+
+  const moveMarker = (index, rawValue) => {
+    const target = Math.max(0, Math.min(100, Number(rawValue)))
+    const currentValue = positionsRef.current[index] ?? 0
+    const duration = Number(inputRefs.current[index]?.dataset.pacingDuration) || 1700
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      applyMarkerPosition(index, target)
+      return
+    }
+
+    const motion = markerMotionRef.current
+    if (motion.index !== index) {
+      window.cancelAnimationFrame(motion.frame)
+      markerMotionRef.current = {
+        frame: null,
+        index,
+        target,
+        speed: 100000 / duration,
+        lastTime: null,
+      }
+    } else {
+      motion.target = target
+      motion.speed = 100000 / duration
+    }
+
+    const activeMotion = markerMotionRef.current
+    if (Math.abs(target - currentValue) < .1 || activeMotion.frame != null) return
+
+    const advanceFrame = (timestamp) => {
+      const currentMotion = markerMotionRef.current
+      if (currentMotion.index !== index) return
+
+      if (currentMotion.lastTime == null) currentMotion.lastTime = timestamp
+      const elapsedSeconds = Math.min(.04, (timestamp - currentMotion.lastTime) / 1000)
+      currentMotion.lastTime = timestamp
+
+      const displayedValue = positionsRef.current[index] ?? 0
+      const distance = currentMotion.target - displayedValue
+      const speed = distance < 0 ? 180 : currentMotion.speed
+      const travel = Math.min(Math.abs(distance), speed * elapsedSeconds)
+      const nextValue = displayedValue + Math.sign(distance) * travel
+      const completed = applyMarkerPosition(index, nextValue)
+
+      if (completed || Math.abs(currentMotion.target - nextValue) < .1) {
+        currentMotion.frame = null
+        currentMotion.lastTime = null
+        return
+      }
+
+      currentMotion.frame = window.requestAnimationFrame(advanceFrame)
+    }
+
+    activeMotion.frame = window.requestAnimationFrame(advanceFrame)
+  }
+
+  const resetMarker = (index) => {
+    const motion = markerMotionRef.current
+    if (motion.index === index) {
+      window.cancelAnimationFrame(motion.frame)
+      markerMotionRef.current = { frame: null, index: null, target: 0, speed: 60, lastTime: null }
+    }
+    writeMarkerPosition(index, 0)
   }
 
   const startContinuousDrag = (index, pointerId) => {
@@ -258,8 +341,9 @@ function Reader({ story, onClose }) {
       gesture.pendingIndex = null
       gesture.transferred = true
       gesture.entryX = event.clientX
+      wordIndexRef.current = targetWordIndex
       setWordIndex(targetWordIndex)
-      setPositions((current) => ({ ...current, [targetWordIndex]: 0 }))
+      writeMarkerPosition(targetWordIndex, 0)
       requestAnimationFrame(() => inputRefs.current[targetWordIndex]?.focus())
       return
     }
@@ -276,8 +360,9 @@ function Reader({ story, onClose }) {
 
     if (gesture.pendingIndex != null) {
       const nextIndex = gesture.pendingIndex
+      wordIndexRef.current = nextIndex
       setWordIndex(nextIndex)
-      setPositions((current) => ({ ...current, [nextIndex]: 0 }))
+      writeMarkerPosition(nextIndex, 0)
       requestAnimationFrame(() => inputRefs.current[nextIndex]?.focus())
       return
     }
@@ -288,7 +373,7 @@ function Reader({ story, onClose }) {
     if (currentValue <= 0 || currentValue >= WORD_COMPLETE_THRESHOLD) return
 
     setReturningWordIndex(wordIndex)
-    setPositions((current) => ({ ...current, [wordIndex]: 0 }))
+    resetMarker(wordIndex)
     window.clearTimeout(returnTimerRef.current)
     returnTimerRef.current = window.setTimeout(() => setReturningWordIndex(null), 340)
   }
@@ -297,12 +382,17 @@ function Reader({ story, onClose }) {
     if (index !== wordIndex || index <= 0) return
 
     const previousIndex = index - 1
+    window.cancelAnimationFrame(markerMotionRef.current.frame)
+    markerMotionRef.current = { frame: null, index: null, target: 0, speed: 60, lastTime: null }
     setFinished(false)
-    setPositions((current) => ({
-      ...current,
+    const nextPositions = {
+      ...positionsRef.current,
       [index]: 0,
       [previousIndex]: 100,
-    }))
+    }
+    positionsRef.current = nextPositions
+    setPositions(nextPositions)
+    wordIndexRef.current = previousIndex
     setWordIndex(previousIndex)
     requestAnimationFrame(() => inputRefs.current[previousIndex]?.focus())
   }
@@ -371,6 +461,7 @@ function Reader({ story, onClose }) {
               value={positions[index] ?? 0}
               externalReturning={returningWordIndex === index}
               onChange={moveMarker}
+              onReset={resetMarker}
               onPrevious={moveToPreviousWord}
               onGestureStart={startContinuousDrag}
               inputRef={(element) => { inputRefs.current[index] = element }}
@@ -393,7 +484,7 @@ function Reader({ story, onClose }) {
   )
 }
 
-function WordSlider({ word, index, active, complete, cueing, practiceMode, value, externalReturning, onChange, onPrevious, onGestureStart, inputRef }) {
+function WordSlider({ word, index, active, complete, cueing, practiceMode, value, externalReturning, onChange, onReset, onPrevious, onGestureStart, inputRef }) {
   const wordParts = word.match(/^([^\p{L}\p{N}]*)([\p{L}\p{N}'’-]+)([^\p{L}\p{N}]*)$/u)
   const [, prefix = '', readableWord = word, suffix = ''] = wordParts ?? []
   const normalizedWord = readableWord.toLowerCase()
@@ -438,6 +529,7 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
   const [cueIndex, setCueIndex] = useState(0)
   const [returning, setReturning] = useState(false)
   const [backPull, setBackPull] = useState(0)
+  const [inputValue, setInputValue] = useState(value)
   const backGestureRef = useRef(null)
   const currentSoundTiming = soundTimings[cueIndex]
   let trailingSilentLength = 0
@@ -450,19 +542,27 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
   const soundedWidthRatio = hasSoundCues
     ? Math.max(.35, (readableWord.length - trailingSilentLength) / readableWord.length)
     : 1
+  const pacingDuration = hasSoundCues
+    ? Math.max(750, soundWeights.reduce((duration, weight) => duration + weight * 520, 0))
+    : Math.min(3200, Math.max(900, readableWord.length * 380))
   const sliderValueText = hasSoundCues
     ? `${soundGroups[cueIndex]?.text}, ${currentSoundTiming === 'quick' ? 'quick sound' : 'hold this sound'}`
     : value < 5 ? 'Start of word' : value > 95 ? 'End of word' : `${Math.round(value)} percent through word`
 
   const moveWithCue = (rawValue) => {
     const nextValue = Number(rawValue)
+    setInputValue(nextValue)
 
+    onChange(index, nextValue)
+  }
+
+  useEffect(() => {
     if (hasSoundCues && cuePositions.length > 1) {
       let nearestIndex = 0
       let nearestDistance = Number.POSITIVE_INFINITY
 
       cuePositions.forEach((position, groupIndex) => {
-        const distance = Math.abs(position - nextValue)
+        const distance = Math.abs(position - value)
         if (distance < nearestDistance) {
           nearestDistance = distance
           nearestIndex = groupIndex
@@ -471,24 +571,34 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
 
       setCueIndex(nearestIndex)
     }
+  }, [value])
 
-    onChange(index, nextValue)
-  }
+  useEffect(() => {
+    if (!backGestureRef.current) setInputValue(value)
+  }, [value])
 
-  const pullMarkerBack = (rawValue = value) => {
+  useEffect(() => {
+    if (!active) {
+      backGestureRef.current = null
+      setBackPull(0)
+    }
+  }, [active])
+
+  const pullMarkerBack = () => {
     if (!active) return
 
-    const releaseValue = Number(rawValue)
-    if (releaseValue >= WORD_COMPLETE_THRESHOLD) return
+    if (value >= WORD_COMPLETE_THRESHOLD) return
 
-    setReturning(releaseValue > .1)
+    setReturning(value > .1)
     setCueIndex(0)
-    onChange(index, 0)
+    setInputValue(0)
+    onReset(index)
   }
 
   const beginDrag = (event) => {
     setReturning(false)
     setBackPull(0)
+    setInputValue(value)
     backGestureRef.current = { pointerId: event.pointerId, used: false }
     onGestureStart(index, event.pointerId)
     event.currentTarget.setPointerCapture?.(event.pointerId)
@@ -513,7 +623,7 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
   const endDrag = (event) => {
     setBackPull(0)
     backGestureRef.current = null
-    pullMarkerBack(event.currentTarget.value)
+    pullMarkerBack()
   }
 
   return (
@@ -572,8 +682,9 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
           min="0"
           max="100"
           step="0.1"
-          value={value}
+          value={inputValue}
           disabled={!active}
+          data-pacing-duration={pacingDuration}
           aria-label={`Read the word ${readableWord}`}
           aria-describedby="reading-instruction"
           aria-valuetext={sliderValueText}
@@ -581,7 +692,7 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
           onPointerMove={trackBackGesture}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
-          onBlur={(event) => pullMarkerBack(event.currentTarget.value)}
+          onBlur={pullMarkerBack}
           onChange={(event) => moveWithCue(event.target.value)}
           onKeyDown={(event) => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
@@ -589,8 +700,8 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
             if (event.key === 'Home') moveWithCue(0)
             if (event.key === 'End') moveWithCue(100)
             if (event.key === 'ArrowLeft' && value <= 0 && index > 0) onPrevious(index)
-            else if (event.key === 'ArrowLeft') moveWithCue(Math.max(0, value - 10))
-            if (event.key === 'ArrowRight') moveWithCue(Math.min(100, value + 10))
+            else if (event.key === 'ArrowLeft') moveWithCue(Math.max(0, inputValue - 10))
+            if (event.key === 'ArrowRight') moveWithCue(Math.min(100, inputValue + 10))
           }}
         />
       </div>
