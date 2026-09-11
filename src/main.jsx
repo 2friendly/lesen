@@ -148,7 +148,11 @@ function Reader({ story, onClose }) {
   const [wordIndex, setWordIndex] = useState(0)
   const [positions, setPositions] = useState({})
   const [finished, setFinished] = useState(false)
+  const [returningWordIndex, setReturningWordIndex] = useState(null)
   const inputRefs = useRef([])
+  const readingStageRef = useRef(null)
+  const continuousDragRef = useRef(null)
+  const returnTimerRef = useRef(null)
   const sentence = story.sentences[sentenceIndex]
   const words = sentence.split(/\s+/)
   const mode = story.mode ?? 'story'
@@ -167,10 +171,15 @@ function Reader({ story, onClose }) {
   const progress = ((sentenceIndex + (finished ? 1 : 0)) / story.sentences.length) * 100
 
   useEffect(() => {
+    window.clearTimeout(returnTimerRef.current)
+    continuousDragRef.current = null
+    setReturningWordIndex(null)
     setWordIndex(0)
     setPositions({})
     setFinished(false)
     requestAnimationFrame(() => inputRefs.current[0]?.focus())
+
+    return () => window.clearTimeout(returnTimerRef.current)
   }, [sentenceIndex])
 
   const speakSentence = () => {
@@ -189,12 +198,62 @@ function Reader({ story, onClose }) {
     if (value >= WORD_COMPLETE_THRESHOLD && index === wordIndex) {
       setPositions((current) => ({ ...current, [index]: 100 }))
       if (index < words.length - 1) {
+        const activePointerId = continuousDragRef.current?.pointerId
+        if (activePointerId != null) {
+          try {
+            readingStageRef.current?.setPointerCapture(activePointerId)
+          } catch {
+            // The pointer may already have ended; normal word handoff still works.
+          }
+        }
         setWordIndex(index + 1)
         requestAnimationFrame(() => inputRefs.current[index + 1]?.focus())
       } else {
         setFinished(true)
       }
     }
+  }
+
+  const startContinuousDrag = (index, pointerId) => {
+    window.clearTimeout(returnTimerRef.current)
+    setReturningWordIndex(null)
+    continuousDragRef.current = { originIndex: index, pointerId }
+  }
+
+  const continueContinuousDrag = (event) => {
+    const gesture = continuousDragRef.current
+    if (!gesture || wordIndex <= gesture.originIndex || finished) return
+
+    const activeInput = inputRefs.current[wordIndex]
+    if (!activeInput) return
+
+    const bounds = activeInput.getBoundingClientRect()
+    const styles = window.getComputedStyle(activeInput)
+    const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0
+    const paddingRight = Number.parseFloat(styles.paddingRight) || 0
+    const trackStart = bounds.left + paddingLeft
+    const trackEnd = bounds.right - paddingRight
+    const trackWidth = Math.max(1, trackEnd - trackStart)
+    const verticalAllowance = 28
+
+    if (event.clientY < bounds.top - verticalAllowance || event.clientY > bounds.bottom + verticalAllowance) return
+
+    const nextValue = Math.max(0, Math.min(100, ((event.clientX - trackStart) / trackWidth) * 100))
+    moveMarker(wordIndex, nextValue)
+  }
+
+  const endContinuousDrag = () => {
+    const gesture = continuousDragRef.current
+    continuousDragRef.current = null
+    if (!gesture || wordIndex <= gesture.originIndex || finished) return
+
+    const currentValue = positions[wordIndex] ?? 0
+    if (currentValue <= 0 || currentValue >= WORD_COMPLETE_THRESHOLD) return
+
+    setReturningWordIndex(wordIndex)
+    setPositions((current) => ({ ...current, [wordIndex]: 0 }))
+    window.clearTimeout(returnTimerRef.current)
+    returnTimerRef.current = window.setTimeout(() => setReturningWordIndex(null), 340)
   }
 
   const moveToPreviousWord = (index) => {
@@ -242,7 +301,14 @@ function Reader({ story, onClose }) {
         <span style={{ transform: `scaleX(${progress / 100})` }} />
       </div>
 
-      <section className={`reading-stage ${isPreK ? 'has-picture-cue' : ''}`} aria-label="Reading practice">
+      <section
+        ref={readingStageRef}
+        className={`reading-stage ${isPreK ? 'has-picture-cue' : ''}`}
+        aria-label="Reading practice"
+        onPointerMove={continueContinuousDrag}
+        onPointerUp={endContinuousDrag}
+        onPointerCancel={endContinuousDrag}
+      >
         <div className="page-mark" aria-hidden="true">{String(sentenceIndex + 1).padStart(2, '0')}</div>
         {isPreK && story.pictures?.[sentenceIndex] && (
           <ContextPicture
@@ -266,8 +332,10 @@ function Reader({ story, onClose }) {
               cueing={story.level === 'preschool' || story.level === 'kindy'}
               practiceMode={mode}
               value={positions[index] ?? 0}
+              externalReturning={returningWordIndex === index}
               onChange={moveMarker}
               onPrevious={moveToPreviousWord}
+              onGestureStart={startContinuousDrag}
               inputRef={(element) => { inputRefs.current[index] = element }}
             />
           ))}
@@ -288,7 +356,7 @@ function Reader({ story, onClose }) {
   )
 }
 
-function WordSlider({ word, index, active, complete, cueing, practiceMode, value, onChange, onPrevious, inputRef }) {
+function WordSlider({ word, index, active, complete, cueing, practiceMode, value, externalReturning, onChange, onPrevious, onGestureStart, inputRef }) {
   const wordParts = word.match(/^([^\p{L}\p{N}]*)([\p{L}\p{N}'’-]+)([^\p{L}\p{N}]*)$/u)
   const [, prefix = '', readableWord = word, suffix = ''] = wordParts ?? []
   const normalizedWord = readableWord.toLowerCase()
@@ -385,6 +453,7 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
     setReturning(false)
     setBackPull(0)
     backGestureRef.current = { pointerId: event.pointerId, used: false }
+    onGestureStart(index, event.pointerId)
     event.currentTarget.setPointerCapture?.(event.pointerId)
   }
 
@@ -412,7 +481,7 @@ function WordSlider({ word, index, active, complete, cueing, practiceMode, value
 
   return (
     <div
-      className={`word-unit ${practiceMode === 'sound' ? 'is-sound-practice' : ''} ${active ? 'is-active' : ''} ${complete ? 'is-complete' : ''} ${returning ? 'is-returning' : ''} ${backPull < 0 ? 'is-pulling-back' : ''}`}
+      className={`word-unit ${practiceMode === 'sound' ? 'is-sound-practice' : ''} ${active ? 'is-active' : ''} ${complete ? 'is-complete' : ''} ${returning || externalReturning ? 'is-returning' : ''} ${backPull < 0 ? 'is-pulling-back' : ''}`}
       style={{
         '--marker-position': `${value * soundedWidthRatio}%`,
         '--back-pull': `${backPull}px`,
