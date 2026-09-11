@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './styles.css'
 import { earlyReaderCueGroups, earlyReaderSoundTiming, earlyReaderWordFeatures, levels, stories } from './stories'
 
-const WORD_COMPLETE_THRESHOLD = 94
+const WORD_COMPLETE_THRESHOLD = 97
 
 const Chevron = ({ direction = 'right' }) => (
   <svg aria-hidden="true" viewBox="0 0 24 24" className={`icon icon-${direction}`}>
@@ -198,6 +198,7 @@ function Reader({ story, onClose }) {
     if (value >= WORD_COMPLETE_THRESHOLD && index === wordIndex) {
       setPositions((current) => ({ ...current, [index]: 100 }))
       if (index < words.length - 1) {
+        const gesture = continuousDragRef.current
         const activePointerId = continuousDragRef.current?.pointerId
         if (activePointerId != null) {
           try {
@@ -206,8 +207,12 @@ function Reader({ story, onClose }) {
             // The pointer may already have ended; normal word handoff still works.
           }
         }
-        setWordIndex(index + 1)
-        requestAnimationFrame(() => inputRefs.current[index + 1]?.focus())
+        if (gesture) {
+          gesture.pendingIndex = index + 1
+        } else {
+          setWordIndex(index + 1)
+          requestAnimationFrame(() => inputRefs.current[index + 1]?.focus())
+        }
       } else {
         setFinished(true)
       }
@@ -217,14 +222,23 @@ function Reader({ story, onClose }) {
   const startContinuousDrag = (index, pointerId) => {
     window.clearTimeout(returnTimerRef.current)
     setReturningWordIndex(null)
-    continuousDragRef.current = { originIndex: index, pointerId }
+    continuousDragRef.current = {
+      originIndex: index,
+      pointerId,
+      pendingIndex: null,
+      transferred: false,
+      entryX: null,
+    }
   }
 
   const continueContinuousDrag = (event) => {
     const gesture = continuousDragRef.current
-    if (!gesture || wordIndex <= gesture.originIndex || finished) return
+    if (!gesture || finished) return
 
-    const activeInput = inputRefs.current[wordIndex]
+    if (gesture.pendingIndex == null && !gesture.transferred) return
+
+    const targetWordIndex = gesture.pendingIndex ?? wordIndex
+    const activeInput = inputRefs.current[targetWordIndex]
     if (!activeInput) return
 
     const bounds = activeInput.getBoundingClientRect()
@@ -238,14 +252,37 @@ function Reader({ story, onClose }) {
 
     if (event.clientY < bounds.top - verticalAllowance || event.clientY > bounds.bottom + verticalAllowance) return
 
-    const nextValue = Math.max(0, Math.min(100, ((event.clientX - trackStart) / trackWidth) * 100))
+    if (gesture.pendingIndex != null) {
+      if (event.clientX < trackStart) return
+
+      gesture.pendingIndex = null
+      gesture.transferred = true
+      gesture.entryX = event.clientX
+      setWordIndex(targetWordIndex)
+      setPositions((current) => ({ ...current, [targetWordIndex]: 0 }))
+      requestAnimationFrame(() => inputRefs.current[targetWordIndex]?.focus())
+      return
+    }
+
+    const distanceFromEntry = event.clientX - (gesture.entryX ?? trackStart)
+    const nextValue = Math.max(0, Math.min(100, (distanceFromEntry / trackWidth) * 100))
     moveMarker(wordIndex, nextValue)
   }
 
   const endContinuousDrag = () => {
     const gesture = continuousDragRef.current
     continuousDragRef.current = null
-    if (!gesture || wordIndex <= gesture.originIndex || finished) return
+    if (!gesture || finished) return
+
+    if (gesture.pendingIndex != null) {
+      const nextIndex = gesture.pendingIndex
+      setWordIndex(nextIndex)
+      setPositions((current) => ({ ...current, [nextIndex]: 0 }))
+      requestAnimationFrame(() => inputRefs.current[nextIndex]?.focus())
+      return
+    }
+
+    if (!gesture.transferred) return
 
     const currentValue = positions[wordIndex] ?? 0
     if (currentValue <= 0 || currentValue >= WORD_COMPLETE_THRESHOLD) return
