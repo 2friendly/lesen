@@ -92,8 +92,8 @@ h1 { margin: 0; font: 800 clamp(3.2rem, 8vw, 6.8rem)/.9 'Fraunces', Georgia, ser
 .context-picture.is-celebrating .picture-sparkle.sparkle-two { animation-delay: .1s; }
 @keyframes picture-pop { 0% { opacity: 0; transform: scale(.2) rotate(-12deg); } 45% { opacity: 1; } 100% { opacity: 0; transform: scale(1.25) rotate(8deg); } }
 .word-line { width: min(100%, 68rem); display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; column-gap: clamp(1.2rem, 3vw, 2.6rem); row-gap: clamp(2.7rem, 7vh, 4.5rem); }
-.word-unit { width: max-content; min-width: 4.75rem; opacity: .46; transition: opacity .25s ease-out; }
-.word-unit.is-sound-practice { width: var(--sound-path-width); min-width: var(--sound-path-width); }
+.word-unit { width: max-content; min-width: var(--word-path-width, 4.75rem); opacity: .46; transition: opacity .25s ease-out; }
+.word-unit.is-sound-practice { width: var(--word-path-width); min-width: var(--word-path-width); }
 .word-unit.is-active, .word-unit.is-complete { opacity: 1; }
 .word-display { display: flex; justify-content: center; font: 700 clamp(2.65rem, 5.5vw, 4.9rem)/1.05 'Andika', 'Trebuchet MS', sans-serif; letter-spacing: .015em; font-variant-ligatures: none; }
 .letters { display: inline-flex; }
@@ -124,7 +124,6 @@ h1 { margin: 0; font: 800 clamp(3.2rem, 8vw, 6.8rem)/.9 'Fraunces', Georgia, ser
 .slider-wrap:has(input:focus-visible) { outline: 3px solid #157ca0; outline-offset: 3px; }
 .slider-wrap:has(input:active) .slider-marker { box-shadow: inset 0 .12rem 0 color-mix(in oklch, #fffaf0 22%, transparent), 0 .1rem 0 #28536d, 0 .22rem .36rem color-mix(in oklch, var(--ink) 20%, transparent); transform: translateX(calc(-50% + var(--back-pull, 0px))) translateY(.14rem) scale(.97); }
 .word-unit.is-pulling-back .slider-marker { transition: transform .08s linear, box-shadow .16s ease-out; }
-.word-unit.is-returning .slider-marker { transition: left .3s cubic-bezier(.22, 1, .36, 1), opacity .22s cubic-bezier(.25, 1, .5, 1), transform .22s cubic-bezier(.25, 1, .5, 1); }
 .word-unit:not(.is-active) input { cursor: default; }
 .word-unit.is-complete .slider-marker { background: var(--green); }
 .word-unit:not(.is-active) .slider-marker { opacity: 0; transform: translateX(calc(-50% + var(--back-pull, 0px))) translateY(.6rem) scale(.9); }
