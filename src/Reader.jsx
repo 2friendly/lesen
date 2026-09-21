@@ -1,54 +1,42 @@
+
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ContextPicture } from './ContextPicture'
 import { earlyReaderCueGroups, earlyReaderSoundTiming, earlyReaderWordFeatures } from './stories'
-import { clamp, locateDrag, markerOnRail } from './drag'
+import { markerOnRail, positionOnRail } from './drag'
+import { readingSteps, savedStepIndex } from './readingSteps'
 
 const Chevron = ({ back = false }) => <svg aria-hidden="true" viewBox="0 0 24 24" className={`icon ${back ? 'icon-left' : ''}`}><path d="m9 5 7 7-7 7" /></svg>
+const Book = () => <svg aria-hidden="true" viewBox="0 0 24 24" className="icon"><path d="M12 5v15M12 5C9 3 5 3 2 4v14c4-1 7 0 10 2 3-2 6-3 10-2V4c-3-1-7-1-10 1Z" /></svg>
 const stopAudio = () => window.speechSynthesis?.cancel()
-
-function readPlace(id) {
-  try {
-    const saved = JSON.parse(localStorage.getItem(`lesen:${id}`))
-    return saved && Number.isInteger(saved.page) ? saved : {}
-  } catch { return {} }
+const readPlace = (id) => {
+  try { return JSON.parse(localStorage.getItem(`lesen:${id}`)) ?? {} } catch { return {} }
 }
 
-export function Reader({ story, onClose }) {
-  const [sentenceIndex, setSentenceIndex] = useState(() => clamp(readPlace(story.id).page || 0, 0, story.sentences.length - 1))
-  const [wordIndex, setWordIndex] = useState(0)
-  const [positions, setPositions] = useState({})
-  const [finished, setFinished] = useState(false)
+export function Reader({ story, onClose, nextStory, onNextStory, resume = false }) {
+  const earlyReader = ['preschool', 'kindy'].includes(story.level)
+  const [supported, setSupported] = useState(earlyReader)
+  const steps = readingSteps(story, supported)
+  const [stepIndex, setStepIndex] = useState(() => resume ? savedStepIndex(steps, readPlace(story.id)) : 0)
+  const [value, setValue] = useState(0)
   const [ending, setEnding] = useState(false)
-  const [supported, setSupported] = useState(['preschool', 'kindy'].includes(story.level))
-  const [floating, setFloating] = useState(null)
   const [showHelp, setShowHelp] = useState(false)
-  const [showDemo, setShowDemo] = useState(() => {
-    try { return !localStorage.getItem('lesen:drag-demonstrated') } catch { return true }
-  })
+  const [floating, setFloating] = useState(null)
   const [speaking, setSpeaking] = useState(false)
   const [audioError, setAudioError] = useState('')
   const stageRef = useRef(null)
-  const railRefs = useRef([])
-  const handleRefs = useRef([])
+  const railRef = useRef(null)
+  const handleRef = useRef(null)
   const gestureRef = useRef(null)
-  const indexRef = useRef(0)
-  const positionsRef = useRef({})
   const headingRef = useRef(null)
-  const endingRef = useRef(null)
-  const sentence = story.sentences[sentenceIndex]
-  const words = sentence.split(/\s+/)
+  const step = steps[stepIndex] ?? steps[0]
   const mode = story.mode ?? 'story'
-  const unit = mode === 'sound' ? 'Sound' : mode === 'word' ? 'Word' : 'Page'
-  const ready = finished || !supported
-  const lastPage = sentenceIndex === story.sentences.length - 1
-  const progress = (sentenceIndex + (ready ? 1 : 0)) / story.sentences.length * 100
+  const lastStep = stepIndex === steps.length - 1
+  const progress = ending ? 100 : stepIndex / steps.length * 100
 
   useEffect(() => {
-    try { localStorage.setItem(`lesen:${story.id}`, JSON.stringify({ page: sentenceIndex })) } catch { /* Reading still works without storage. */ }
-  }, [story.id, sentenceIndex])
-
+    try { localStorage.setItem(`lesen:${story.id}`, JSON.stringify({ page: step.page, word: step.word })) } catch { /* Storage is optional. */ }
+  }, [story.id, step.page, step.word])
   useEffect(() => () => stopAudio(), [])
-  useEffect(() => { if (ending) endingRef.current?.focus({ preventScroll: true }) }, [ending])
 
   const endDrag = (event) => {
     const gesture = gestureRef.current
@@ -62,162 +50,116 @@ export function Reader({ story, onClose }) {
     const cancel = () => endDrag()
     window.addEventListener('resize', cancel)
     window.addEventListener('blur', cancel)
-    return () => {
-      window.removeEventListener('resize', cancel)
-      window.removeEventListener('blur', cancel)
-    }
+    return () => { window.removeEventListener('resize', cancel); window.removeEventListener('blur', cancel) }
   }, [])
 
-  const place = (index, value) => {
-    const next = { ...positionsRef.current, [index]: value }
-    // Backtracking restores a genuine reading position, including after completion.
-    for (let i = index + 1; i < words.length; i++) delete next[i]
-    for (let i = 0; i < index; i++) next[i] = 100
-    positionsRef.current = next
-    indexRef.current = index
-    setPositions(next)
-    setWordIndex(index)
-    setFinished(index === words.length - 1 && value >= 100)
+  const geometry = () => {
+    const rail = railRef.current.getBoundingClientRect()
+    const handle = handleRef.current.getBoundingClientRect()
+    return { left: rail.left, right: rail.right, width: rail.width, y: handle.top + handle.height / 2 }
   }
-
-  const railGeometry = () => railRefs.current.slice(0, words.length).map((rail, index) => {
-    if (!rail) return null
-    const bounds = rail.getBoundingClientRect()
-    const handle = handleRefs.current[index]?.getBoundingClientRect()
-    return { left: bounds.left, right: bounds.right, width: bounds.width, y: handle ? handle.top + handle.height / 2 : bounds.bottom + 48 }
-  })
-
   const beginDrag = (event, index, fromRail = false) => {
     if (gestureRef.current || !event.isPrimary || event.button !== 0) return
     event.preventDefault()
-    try { localStorage.setItem('lesen:drag-demonstrated', 'yes') } catch { /* Optional hint preference. */ }
-    const handle = handleRefs.current[index].getBoundingClientRect()
-    const rails = railGeometry()
-    const centreX = handle.left + handle.width / 2
-    const centreY = handle.top + handle.height / 2
-    const offsetX = fromRail ? 0 : event.clientX - centreX
-    const offsetY = event.clientY - centreY
-    gestureRef.current = { pointerId: event.pointerId, offsetX, offsetY }
+    const rail = geometry()
+    const offsetX = fromRail ? 0 : event.clientX - (rail.left + rail.width * value / 100)
+    gestureRef.current = { pointerId: event.pointerId, offsetX }
     stageRef.current.setPointerCapture(event.pointerId)
-    handleRefs.current[index].focus({ preventScroll: true })
-    if (fromRail) place(index, clamp((event.clientX - rails[index].left) / rails[index].width * 100, 0, 100))
-    else if (index !== indexRef.current) place(index, positionsRef.current[index] ?? 0)
-    setFloating(markerOnRail(rails[index], event.clientX - offsetX))
+    handleRef.current.focus({ preventScroll: true })
+    const x = event.clientX - offsetX
+    if (fromRail) setValue(positionOnRail(rail, x))
+    setFloating(markerOnRail(rail, x))
   }
-
   const drag = (event) => {
     const gesture = gestureRef.current
     if (!gesture || event.pointerId !== gesture.pointerId) return
+    const rail = geometry()
     const x = event.clientX - gesture.offsetX
-    const y = event.clientY - gesture.offsetY
-    const rails = railGeometry()
-    const next = locateDrag(indexRef.current, x, y, rails)
-    place(next.index, next.value)
-    setFloating(markerOnRail(rails[next.index], x))
+    setValue(positionOnRail(rail, x))
+    setFloating(markerOnRail(rail, x))
   }
 
-  const selectWord = (index, value = 0) => {
+  const clearInteraction = () => {
     endDrag()
-    place(clamp(index, 0, words.length - 1), value)
-    requestAnimationFrame(() => handleRefs.current[clamp(index, 0, words.length - 1)]?.focus({ preventScroll: true }))
-  }
-
-  const resetPage = (index = sentenceIndex) => {
-    endDrag()
-    setShowDemo(false)
     stopAudio()
     setSpeaking(false)
     setAudioError('')
-    positionsRef.current = {}
-    indexRef.current = 0
-    setPositions({})
-    setWordIndex(0)
-    setFinished(false)
+    setValue(0)
+    setShowHelp(false)
+  }
+  const goTo = (index) => {
+    clearInteraction()
     setEnding(false)
-    setSentenceIndex(index)
+    setStepIndex(index)
     requestAnimationFrame(() => headingRef.current?.focus({ preventScroll: true }))
   }
-
+  const next = () => {
+    if (lastStep) { clearInteraction(); setEnding(true); requestAnimationFrame(() => headingRef.current?.focus({ preventScroll: true })) }
+    else goTo(stepIndex + 1)
+  }
+  const back = () => ending ? goTo(stepIndex) : stepIndex > 0 ? goTo(stepIndex - 1) : onClose()
+  const toggleSupport = () => {
+    clearInteraction()
+    const nextSupported = !supported
+    setStepIndex(savedStepIndex(readingSteps(story, nextSupported), { page: step.page, word: 0 }))
+    setSupported(nextSupported)
+  }
   const speak = () => {
     if (speaking) { stopAudio(); setSpeaking(false); return }
     if (!window.speechSynthesis) return
-    const utterance = new SpeechSynthesisUtterance(sentence)
+    const utterance = new SpeechSynthesisUtterance(step.text)
     utterance.lang = 'en-AU'
     utterance.rate = .8
     utterance.onend = () => setSpeaking(false)
     utterance.onerror = (event) => {
       setSpeaking(false)
-      if (!['interrupted', 'canceled'].includes(event.error)) setAudioError('Voice playback is unavailable. You can keep reading.')
+      if (!['interrupted', 'canceled'].includes(event.error)) setAudioError('Voice unavailable. You can keep reading.')
     }
-    setAudioError('')
     stopAudio()
+    setAudioError('')
     setSpeaking(true)
     window.speechSynthesis.speak(utterance)
   }
 
-  return (
-    <main className="reader-shell">
-      <header className="reader-header">
-        <button className="icon-button" onClick={onClose} aria-label="Back to stories"><Chevron back /></button>
-        <div className="reader-meta" ref={headingRef} tabIndex={-1}>
-          <strong>{story.title}</strong>
-          <span>{ending ? 'The end' : `${unit} ${sentenceIndex + 1} of ${story.sentences.length}`}</span>
-        </div>
-        <button className="icon-button" aria-label="How to read" aria-expanded={showHelp} onClick={() => setShowHelp(!showHelp)}>?</button>
-      </header>
-      <div className="progress-track" role="progressbar" aria-label="Story progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><span style={{ transform: `scaleX(${progress / 100})` }} /></div>
-      {showHelp && <aside className="reading-help">
-        <div className="drag-demo" aria-hidden="true"><span /><i /></div>
-        <strong>Slide along as you read.</strong>
-        <p>Hold the blue handle. Pause whenever you like. Keep holding to move to the next word, or go back.</p>
-        <p><span className="cue-example hold" /> Stretch the sound. <span className="cue-example quick" /> A quick sound.</p>
-        <p>Joined letters share a cue. Grey letters stay quiet. The arrows let you move without dragging.</p>
-        <button className="quiet-button" onClick={() => setShowHelp(false)}>Let’s read</button>
-      </aside>}
-      {ending ? <section className="story-ending">
-        <span className="ending-art" aria-hidden="true">{story.pictures?.at(-1)?.symbol ?? story.art}</span>
-        <p className="eyebrow">{mode === 'story' ? 'The end' : 'Practice complete'}</p>
-        <h1 ref={endingRef} tabIndex={-1}>{mode === 'story' ? 'One more time?' : 'What shall we try next?'}</h1>
-        <p>{story.recall ?? (mode === 'story' ? 'Tell someone your favourite part.' : 'Try your favourite sound or word again.')}</p>
-        <div className="ending-actions"><button className="primary-button" onClick={() => resetPage(0)}>Read again</button><button className="quiet-button" onClick={onClose}>Choose another</button></div>
-      </section> : <>
-        <section ref={stageRef} className={`reading-stage ${story.pictures ? 'has-picture-cue' : ''} ${floating ? 'is-dragging' : ''}`}
-          aria-label="Reading practice" onPointerMove={drag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={endDrag}>
-          {story.pictures?.[sentenceIndex] && <ContextPicture pictures={story.pictures} currentIndex={sentenceIndex} progress={finished ? 1 : (positions[0] ?? 0) / 100} celebrating={finished} mode={mode} target={sentence} />}
-          <p className="reader-prompt" id="reading-instruction">{!supported ? 'Read at your own pace.' : mode === 'sound' ? 'Say the sound. Slide along.' : 'Slide along. Take your time.'}</p>
-          {supported && showDemo && <div className="first-drag-hint"><div className="drag-demo" aria-hidden="true"><span /><i /></div><span>Hold. Slide. Try it!</span><button className="text-button" aria-label="Hide dragging demonstration" onClick={() => { setShowDemo(false); try { localStorage.setItem('lesen:drag-demonstrated', 'yes') } catch { /* Optional preference. */ } }}>Got it</button></div>}
-          {supported ? <>
-            <p className="sr-only">{sentence}</p>
-            <div className="word-line">
-              {words.map((word, index) => <WordSlider key={`${sentenceIndex}-${index}`} word={word} index={index}
-                active={index === wordIndex} complete={index < wordIndex} value={positions[index] ?? 0}
-                cueing={['preschool', 'kindy'].includes(story.level)} practiceMode={mode}
-                railRef={(node) => { railRefs.current[index] = node }} handleRef={(node) => { handleRefs.current[index] = node }}
-                onStart={beginDrag} onPlace={selectWord} last={index === words.length - 1} />)}
-            </div>
-            {floating && <span className="slider-marker floating-marker" style={{ left: floating.x, top: floating.y }} aria-hidden="true"><i /></span>}
-          </> : <p className="independent-sentence">{sentence}</p>}
-        </section>
-        <footer className="reading-controls">
-          {supported && <div className="word-controls" aria-label="Word controls">
-            <button className="quiet-button" disabled={wordIndex === 0 && (positions[0] ?? 0) === 0} onClick={() => selectWord(wordIndex > 0 ? wordIndex - 1 : 0)}><Chevron back /> Back</button>
-            <button className="quiet-button" onClick={() => wordIndex < words.length - 1 ? selectWord(wordIndex + 1) : selectWord(wordIndex, 100)}>{wordIndex < words.length - 1 ? 'Next word' : 'Done'}<Chevron /></button>
-          </div>}
-          <div className="page-controls">
-            <button className="quiet-button" disabled={sentenceIndex === 0} onClick={() => resetPage(sentenceIndex - 1)} aria-label={`Previous ${unit.toLowerCase()}`}><Chevron back /></button>
-            <button className="quiet-button" onClick={() => resetPage()}>Read again</button>
-            <button className="primary-button" disabled={!ready || Boolean(floating)} onClick={() => { if (lastPage) { stopAudio(); setEnding(true) } else resetPage(sentenceIndex + 1) }}>{lastPage ? 'Finish' : `Next ${unit.toLowerCase()}`}<Chevron /></button>
-          </div>
-          <p className="completion-note" aria-live="polite">{finished && !floating ? `${unit} complete. Read again or keep going.` : '\u00a0'}</p>
-          <div className="reader-options">
-            {mode === 'story' && <button className="text-button" aria-pressed={supported} onClick={() => { endDrag(); setSupported(!supported) }}>{supported ? 'Read without sliders' : 'Show reading sliders'}</button>}
-            {mode !== 'sound' && 'speechSynthesis' in window && <button className="text-button" onClick={speak}>{speaking ? 'Stop voice' : 'Hear with device voice'}</button>}
-          </div>
-          {audioError && <p role="status">{audioError}</p>}
-        </footer>
-      </>}
-    </main>
-  )
+  return <main className="reader-shell tablet-reader">
+    <header className="reader-header">
+      <button className="quiet-button stories-button" onClick={onClose}><Book /> Stories</button>
+      <div className="reader-meta" ref={headingRef} tabIndex={-1}><strong>{story.title}</strong><span>{ending ? 'The end' : `${mode === 'sound' ? 'Sound' : supported ? 'Word' : 'Page'} ${stepIndex + 1} of ${steps.length}`}</span></div>
+      <button className="icon-button" aria-label={showHelp ? 'Close reading help' : 'Reading help and options'} aria-expanded={showHelp} onClick={() => { endDrag(); setShowHelp(!showHelp) }}>{showHelp ? '×' : '?'}</button>
+    </header>
+    <div className="progress-track" role="progressbar" aria-label="Reading progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress)}><span style={{ transform: `scaleX(${progress / 100})` }} /></div>
+    {showHelp ? <section className="tablet-help">
+      <div className="drag-demo" aria-hidden="true"><span /><i /></div>
+      <h1>Slide. Read. Next.</h1>
+      <p>Slide the blue handle as you read. Tap the big arrow for the next word. The other arrow takes you back.</p>
+      <p><span className="cue-example hold" /> Stretch the sound. <span className="cue-example quick" /> A quick sound.</p>
+      <div className="help-options">
+        {mode === 'story' && <button className="quiet-button" onClick={toggleSupport}>{supported ? 'Read whole sentences' : 'Practise one word at a time'}</button>}
+        {mode !== 'sound' && 'speechSynthesis' in window && <button className="quiet-button" onClick={speak}>{speaking ? 'Stop voice' : 'Hear with device voice'}</button>}
+      </div>
+      {audioError && <p role="status">{audioError}</p>}
+      <button className="primary-button" onClick={() => setShowHelp(false)}>Back to reading</button>
+    </section> : ending ? <section className="story-ending">
+      <span className="ending-art" aria-hidden="true">{story.pictures?.at(-1)?.symbol ?? story.art}</span>
+      <p className="eyebrow">{mode === 'story' ? 'The end' : 'All done'}</p>
+      <h1>{mode === 'story' ? 'You reached the end!' : 'A little more practice?'}</h1>
+      <p>{nextStory ? <>Up next: <strong>{nextStory.title}</strong> <span aria-hidden="true">{nextStory.art}</span></> : 'Choose another story to read.'}</p>
+      <button className="quiet-button" onClick={() => goTo(0)}>↺ Read again</button>
+    </section> : <section ref={stageRef} className={`reading-stage ${floating ? 'is-dragging' : ''}`} aria-label="Reading practice" onPointerMove={drag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={endDrag}>
+      {story.pictures?.[step.page] && <ContextPicture pictures={story.pictures} currentIndex={step.page} progress={value / 100} celebrating={value === 100} mode={mode} target={step.text} />}
+      {supported && mode === 'story' && <p className="sentence-context" aria-label={`Sentence: ${step.sentence}`}>{step.sentence.split(/\s+/).map((word, index) => <React.Fragment key={index}><span className={index === step.word ? 'current-word' : ''} aria-current={index === step.word ? 'step' : undefined}>{word}</span>{' '}</React.Fragment>)}</p>}
+      <p className="reader-prompt" id="reading-instruction">{supported ? mode === 'sound' ? 'Say the sound. Slide along.' : 'Slide along as you read.' : 'Read at your own pace.'}</p>
+      {supported ? <div className="word-line solo-word"><p className="sr-only">{step.text}</p><WordSlider key={`${stepIndex}-${supported}`} word={step.text} index={0} active complete={false} value={value} cueing={earlyReader} practiceMode={mode}
+        railRef={(node) => { railRef.current = node }} handleRef={(node) => { handleRef.current = node }} onStart={beginDrag} onPlace={(index, nextValue) => { endDrag(); setValue(nextValue) }} last /></div>
+        : <p className="independent-sentence">{step.text}</p>}
+      {floating && <span className="slider-marker floating-marker" style={{ left: floating.x, top: floating.y }} aria-hidden="true"><i /></span>}
+    </section>}
+    {!showHelp && <footer className="tablet-navigation" aria-label="Reading navigation">
+      <button className="navigation-button nav-back" onClick={back}><Chevron back /><span>Back</span></button>
+      <span className="navigation-hint" aria-live="polite">{ending ? 'Ready for another?' : value === 100 ? 'Ready? Tap Next.' : 'Take your time.'}</span>
+      <button className="navigation-button nav-next" onClick={ending ? nextStory ? onNextStory : onClose : next}><span>{ending ? nextStory ? 'Next story' : 'Stories' : 'Next'}</span><Chevron /></button>
+    </footer>}
+  </main>
 }
 
 function WordSlider({ word, index, active, complete, value, cueing, practiceMode, railRef, handleRef, onStart, onPlace, last }) {
@@ -271,7 +213,7 @@ function WordSlider({ word, index, active, complete, value, cueing, practiceMode
           event.preventDefault()
           if (event.key === 'Home') onPlace(index, 0)
           else if (event.key === 'End') onPlace(index, 100)
-          else if (['ArrowLeft', 'ArrowDown'].includes(event.key)) onPlace(value === 0 && index > 0 ? index - 1 : index, value === 0 && index > 0 ? 100 : Math.max(0, value - 5))
+          else if (['ArrowLeft', 'ArrowDown'].includes(event.key)) onPlace(value === 0 && index > 0 ? index - 1 : index, value === 0 && index > 0 ? 100 : Math.max(0, value - 5), false)
           else onPlace(value === 100 && !last ? index + 1 : index, value === 100 && !last ? 0 : Math.min(100, value + 5))
         }}><span className="slider-marker" aria-hidden="true"><i /></span></button>
     </div>

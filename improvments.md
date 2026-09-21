@@ -6,6 +6,14 @@ Priority direction updated: 17 September 2026. **Child experience first; archite
 
 ## First experience pass — 21 September 2026
 
+### Tablet-only update after the five-year-old trial
+
+The child's observed difficulty takes precedence over the earlier multi-word slider plan. The current design now uses one practice word at a time for early readers, with a quiet sentence reference. Large Back and Next arrows stay in the bottom corners; Stories has a book icon and label. Completing a slider does not change the word: Next is the deliberate advance action. Older readers retain one sentence per screen. Reading options live behind help rather than competing with navigation.
+
+The library shows two choices per shelf page with explicit paging, and finishing a story offers Next story directly. Resume saves the exact word. Four shorter, repetitive Kindy texts replace the mixed-difficulty set; Moon Cat, Hop Frog and Loose Goose remain available in Year 1. The Kindy words are short and have authored cues, but the material still needs educator review rather than being presented as a certified sequence.
+
+Chrome viewport checks cover tablet portrait/landscape for no document scrolling or clipped controls, one-word navigation, backward travel, a complete Kindy story, next-story handoff, resume, help and longer independent sentences. Physical tablet/child validation remains necessary. The historical first-pass details below no longer describe the current word-advance behaviour or narrow-screen layout.
+
 Implemented locally (not pushed):
 
 - One direct pointer-controlled marker, preserving the initial grab offset, with a 96 × 96 CSS-pixel grabbing area. Held dragging works forward/backward between adjacent words and across line boundaries; releasing does not automatically skip to another word. Completion no longer removes the handle.

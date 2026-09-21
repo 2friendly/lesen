@@ -14,29 +14,38 @@ function App() {
   const [view, setView] = useState('library')
   const [level, setLevel] = useState('preschool')
   const [story, setStory] = useState(null)
+  const [resume, setResume] = useState(false)
   const [lastStory, setLastStory] = useState(() => {
     try { return stories.find((item) => item.id === localStorage.getItem('lesen:last-story')) } catch { return null }
   })
 
-  const openStory = (nextStory) => {
+  const openStory = (nextStory, shouldResume = false) => {
     try { localStorage.setItem('lesen:last-story', nextStory.id) } catch { /* Storage is optional. */ }
     setLastStory(nextStory)
     setStory(nextStory)
+    setResume(shouldResume)
+    setLevel(nextStory.level)
     setView('reader')
   }
 
   if (view === 'reader' && story) {
-    return <Reader story={story} onClose={() => setView('library')} />
+    const shelf = stories.filter((item) => item.level === story.level)
+    const nextStory = shelf[(shelf.findIndex((item) => item.id === story.id) + 1) % shelf.length]
+    return <Reader key={story.id} story={story} resume={resume} onClose={() => setView('library')} nextStory={nextStory} onNextStory={() => openStory(nextStory)} />
   }
 
-  return <Library level={level} setLevel={setLevel} onOpen={openStory} lastStory={lastStory} />
+  return <Library key={level} level={level} setLevel={setLevel} onOpen={openStory} lastStory={lastStory} />
 }
 
 function Library({ level, setLevel, onOpen, lastStory }) {
+  const [shelfPage, setShelfPage] = useState(0)
   const visibleStories = stories.filter((story) => story.level === level)
+  const pageCount = Math.ceil(visibleStories.length / 2)
+  const pageStories = visibleStories.slice(shelfPage * 2, shelfPage * 2 + 2)
   const isPreK = level === 'preschool'
 
   const itemDescription = (story) => {
+    if (story.level === 'kindy') return `${story.sentences.reduce((total, sentence) => total + sentence.split(/\s+/).length, 0)} little words`
     const unit = story.mode === 'sound' ? 'sound' : story.mode === 'word' ? 'word' : 'little page'
     return `${story.sentences.length} ${unit}${story.sentences.length === 1 ? '' : 's'}`
   }
@@ -57,12 +66,12 @@ function Library({ level, setLevel, onOpen, lastStory }) {
       <section className="welcome" id="top">
         <div>
           <p className="eyebrow">{isPreK ? 'Start small' : 'Pick a story'}</p>
-          <h1>{isPreK ? <>Let’s play with<br />sounds.</> : <>What shall we<br />read today?</>}</h1>
+          <h1>{isPreK ? 'Pick something to try.' : 'Pick a story.'}</h1>
         </div>
         <div className="sun-sketch" aria-hidden="true"><span>✦</span></div>
       </section>
 
-      {lastStory && <button className="continue-card" onClick={() => onOpen(lastStory)}><span><small>Back to your book</small><strong>{lastStory.title}</strong></span><Chevron /></button>}
+      {lastStory && <button className="continue-card" onClick={() => onOpen(lastStory, true)}><span aria-hidden="true">{lastStory.art}</span><span><small>Keep reading</small><strong>{lastStory.title}</strong></span><Chevron /></button>}
 
       <details className="shelf-settings">
         <summary>For grown-ups · Choose reading level</summary>
@@ -87,13 +96,12 @@ function Library({ level, setLevel, onOpen, lastStory }) {
           <span>{visibleStories.length} {isPreK ? 'activities' : 'stories'}</span>
         </div>
         <div className="story-grid">
-          {visibleStories.map((story, index) => (
+          {pageStories.map((story, index) => (
             <button
               className={`story-card story-color-${index % 4}`}
               key={story.id}
               onClick={() => onOpen(story)}
             >
-              <span className="story-number">0{index + 1}</span>
               <span className="story-art" aria-hidden="true">{story.art}</span>
               <span className="story-copy">
                 <strong>{story.title}</strong>
@@ -104,6 +112,11 @@ function Library({ level, setLevel, onOpen, lastStory }) {
           ))}
         </div>
       </section>
+      <nav className="shelf-navigation" aria-label="Story shelf pages">
+        <button className="quiet-button" disabled={shelfPage === 0} onClick={() => setShelfPage(shelfPage - 1)}><Chevron direction="left" /> Back</button>
+        <span>{shelfPage + 1} / {pageCount}</span>
+        <button className="primary-button" disabled={shelfPage === pageCount - 1} onClick={() => setShelfPage(shelfPage + 1)}>More stories <Chevron /></button>
+      </nav>
     </main>
   )
 }
