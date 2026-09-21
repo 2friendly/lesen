@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ContextPicture } from './ContextPicture'
 import { earlyReaderCueGroups, earlyReaderSoundTiming, earlyReaderWordFeatures } from './stories'
-import { clamp, locateDrag } from './drag'
+import { clamp, locateDrag, markerOnRail } from './drag'
 
 const Chevron = ({ back = false }) => <svg aria-hidden="true" viewBox="0 0 24 24" className={`icon ${back ? 'icon-left' : ''}`}><path d="m9 5 7 7-7 7" /></svg>
 const stopAudio = () => window.speechSynthesis?.cancel()
@@ -102,7 +102,7 @@ export function Reader({ story, onClose }) {
     handleRefs.current[index].focus({ preventScroll: true })
     if (fromRail) place(index, clamp((event.clientX - rails[index].left) / rails[index].width * 100, 0, 100))
     else if (index !== indexRef.current) place(index, positionsRef.current[index] ?? 0)
-    setFloating({ x: event.clientX - offsetX, y: centreY })
+    setFloating(markerOnRail(rails[index], event.clientX - offsetX))
   }
 
   const drag = (event) => {
@@ -110,9 +110,10 @@ export function Reader({ story, onClose }) {
     if (!gesture || event.pointerId !== gesture.pointerId) return
     const x = event.clientX - gesture.offsetX
     const y = event.clientY - gesture.offsetY
-    const next = locateDrag(indexRef.current, x, y, railGeometry())
+    const rails = railGeometry()
+    const next = locateDrag(indexRef.current, x, y, rails)
     place(next.index, next.value)
-    setFloating({ x, y })
+    setFloating(markerOnRail(rails[next.index], x))
   }
 
   const selectWord = (index, value = 0) => {

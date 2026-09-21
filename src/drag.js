@@ -1,5 +1,11 @@
 export const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
 
+// The finger selects a position; the marker stays on the selected rail.
+// Vertical pointer movement is only used to enter a wrapped word's rail.
+export function markerOnRail(rail, x) {
+  return { x: clamp(x, rail.left, rail.right), y: rail.y }
+}
+
 // Only enter an adjacent word. On a new line, enter at its reading edge,
 // never halfway through a word just because it sits below the previous one.
 export function locateDrag(index, x, y, rails) {
