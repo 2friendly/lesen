@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "test": "node --test scripts/drag.test.mjs",
     "dev": "vite",
     "build": "npm run validate:phonics && vite build",
     "validate:phonics": "node scripts/validate-phonics.mjs",

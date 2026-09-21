@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
-import { earlyReaderCueGroups, earlyReaderSoundTiming, earlyReaderWordFeatures, levels, stories } from './stories'
-
-const WORD_COMPLETE_THRESHOLD = 99.5
+import { levels, stories } from './stories'
+import { Reader } from './Reader'
 
 const Chevron = ({ direction = 'right' }) => (
   <svg aria-hidden="true" viewBox="0 0 24 24" className={`icon icon-${direction}`}>
@@ -11,18 +10,17 @@ const Chevron = ({ direction = 'right' }) => (
   </svg>
 )
 
-const Speaker = () => (
-  <svg aria-hidden="true" viewBox="0 0 24 24" className="icon">
-    <path d="M5 10v4h4l5 4V6l-5 4H5Z" /><path d="M17 9a4 4 0 0 1 0 6" />
-  </svg>
-)
-
 function App() {
   const [view, setView] = useState('library')
   const [level, setLevel] = useState('preschool')
   const [story, setStory] = useState(null)
+  const [lastStory, setLastStory] = useState(() => {
+    try { return stories.find((item) => item.id === localStorage.getItem('lesen:last-story')) } catch { return null }
+  })
 
   const openStory = (nextStory) => {
+    try { localStorage.setItem('lesen:last-story', nextStory.id) } catch { /* Storage is optional. */ }
+    setLastStory(nextStory)
     setStory(nextStory)
     setView('reader')
   }
@@ -31,10 +29,10 @@ function App() {
     return <Reader story={story} onClose={() => setView('library')} />
   }
 
-  return <Library level={level} setLevel={setLevel} onOpen={openStory} />
+  return <Library level={level} setLevel={setLevel} onOpen={openStory} lastStory={lastStory} />
 }
 
-function Library({ level, setLevel, onOpen }) {
+function Library({ level, setLevel, onOpen, lastStory }) {
   const visibleStories = stories.filter((story) => story.level === level)
   const isPreK = level === 'preschool'
 
@@ -64,7 +62,11 @@ function Library({ level, setLevel, onOpen }) {
         <div className="sun-sketch" aria-hidden="true"><span>✦</span></div>
       </section>
 
-      <nav className="level-tabs" aria-label="Reading level">
+      {lastStory && <button className="continue-card" onClick={() => onOpen(lastStory)}><span><small>Back to your book</small><strong>{lastStory.title}</strong></span><Chevron /></button>}
+
+      <details className="shelf-settings">
+        <summary>For grown-ups · Choose reading level</summary>
+        <nav className="level-tabs" aria-label="Reading level">
         {levels.map((item) => (
           <button
             key={item.id}
@@ -76,7 +78,8 @@ function Library({ level, setLevel, onOpen }) {
             <small>{item.label}</small>
           </button>
         ))}
-      </nav>
+        </nav>
+      </details>
 
       <section className="story-list" aria-live="polite">
         <div className="shelf-heading">
@@ -105,494 +108,6 @@ function Library({ level, setLevel, onOpen }) {
   )
 }
 
-function ContextPicture({ pictures, currentIndex, progress, celebrating, mode, target }) {
-  const picture = pictures[currentIndex]
-  const cueLength = mode === 'sound' ? target.length : picture.label.length
-  const cueText = picture.label.slice(0, cueLength)
-  const restText = picture.label.slice(cueLength)
 
-  return (
-    <div
-      className={`context-picture ${celebrating ? 'is-celebrating' : ''}`}
-      role="img"
-      aria-label={mode === 'sound' ? `${picture.label}. ${picture.label} begins with ${target}.` : `Picture of a ${picture.label}.`}
-    >
-      <span className="picture-sparkle sparkle-one" aria-hidden="true">✦</span>
-      <span className="picture-sparkle sparkle-two" aria-hidden="true">✦</span>
-      <div
-        className="picture-object"
-        aria-hidden="true"
-        style={{ transform: `translateY(${(1 - progress) * 4}px) scale(${.94 + progress * .06})` }}
-      >
-        {picture.symbol}
-      </div>
-      <div className="picture-word" aria-hidden="true">
-        <strong>{cueText}</strong>{restText}
-      </div>
-      <div className="picture-recap" aria-hidden="true">
-        {pictures.map((item, pictureIndex) => {
-          const revealed = pictureIndex < currentIndex || (pictureIndex === currentIndex && celebrating)
-          return (
-            <span className={`${revealed ? 'is-revealed' : ''} ${pictureIndex === currentIndex ? 'is-current' : ''}`} key={item.label}>
-              {revealed ? item.symbol : ''}
-            </span>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function Reader({ story, onClose }) {
-  const [sentenceIndex, setSentenceIndex] = useState(0)
-  const [wordIndex, setWordIndex] = useState(0)
-  const [positions, setPositions] = useState({})
-  const [finished, setFinished] = useState(false)
-  const inputRefs = useRef([])
-  const readingStageRef = useRef(null)
-  const continuousDragRef = useRef(null)
-  const positionsRef = useRef({})
-  const wordIndexRef = useRef(0)
-  const sentence = story.sentences[sentenceIndex]
-  const words = sentence.split(/\s+/)
-  const mode = story.mode ?? 'story'
-  const unitName = mode === 'sound' ? 'Sound' : mode === 'word' ? 'Word' : 'Page'
-  const prompt = mode === 'sound'
-    ? 'Say the sound and move the handle'
-    : mode === 'word' ? 'Blend the sounds together' : 'Move the blue handle as you read'
-  const successMessage = mode === 'sound'
-    ? 'Great sound!'
-    : mode === 'word' ? 'You blended the word!' : 'You read the whole sentence!'
-  const nextLabel = sentenceIndex === story.sentences.length - 1
-    ? mode === 'story' ? 'Finish story' : 'Finish activity'
-    : mode === 'sound' ? 'Next sound' : mode === 'word' ? 'Next word' : 'Next page'
-  const isPreK = story.level === 'preschool'
-  const pictureProgress = finished ? 1 : Math.min(1, (positions[0] ?? 0) / 100)
-  const progress = ((sentenceIndex + (finished ? 1 : 0)) / story.sentences.length) * 100
-
-  useEffect(() => {
-    continuousDragRef.current = null
-    positionsRef.current = {}
-    wordIndexRef.current = 0
-    setWordIndex(0)
-    setPositions({})
-    setFinished(false)
-    requestAnimationFrame(() => inputRefs.current[0]?.focus())
-
-  }, [sentenceIndex])
-
-  const speakSentence = () => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel()
-      const utterance = new SpeechSynthesisUtterance(sentence)
-      utterance.rate = 0.72
-      window.speechSynthesis.speak(utterance)
-    }
-  }
-
-  const writeMarkerPosition = (index, value) => {
-    const nextPositions = { ...positionsRef.current, [index]: value }
-    positionsRef.current = nextPositions
-    setPositions(nextPositions)
-  }
-
-  const applyMarkerPosition = (index, value) => {
-    writeMarkerPosition(index, value)
-
-    if (value >= WORD_COMPLETE_THRESHOLD && index === wordIndexRef.current) {
-      writeMarkerPosition(index, 100)
-      if (index < words.length - 1) {
-        const gesture = continuousDragRef.current
-        const activePointerId = continuousDragRef.current?.pointerId
-        if (activePointerId != null) {
-          try {
-            readingStageRef.current?.setPointerCapture(activePointerId)
-          } catch {
-            // The pointer may already have ended; normal word handoff still works.
-          }
-        }
-        if (gesture) {
-          gesture.pendingIndex = index + 1
-        } else {
-          wordIndexRef.current = index + 1
-          setWordIndex(index + 1)
-          requestAnimationFrame(() => inputRefs.current[index + 1]?.focus())
-        }
-      } else {
-        setFinished(true)
-      }
-      return true
-    }
-
-    return false
-  }
-
-  const moveMarker = (index, rawValue) => {
-    const target = Math.max(0, Math.min(100, Number(rawValue)))
-    applyMarkerPosition(index, target)
-  }
-
-  const startContinuousDrag = (index, pointerId) => {
-    continuousDragRef.current = {
-      originIndex: index,
-      pointerId,
-      pendingIndex: null,
-      transferred: false,
-    }
-  }
-
-  const continueContinuousDrag = (event) => {
-    const gesture = continuousDragRef.current
-    if (!gesture || finished) return
-
-    if (gesture.pendingIndex == null && !gesture.transferred) return
-
-    const targetWordIndex = gesture.pendingIndex ?? wordIndex
-    const activeInput = inputRefs.current[targetWordIndex]
-    if (!activeInput) return
-
-    const bounds = activeInput.getBoundingClientRect()
-    const styles = window.getComputedStyle(activeInput)
-    const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0
-    const paddingRight = Number.parseFloat(styles.paddingRight) || 0
-    const trackStart = bounds.left + paddingLeft
-    const trackEnd = bounds.right - paddingRight
-    const trackWidth = Math.max(1, trackEnd - trackStart)
-    const verticalAllowance = 28
-
-    if (event.clientY < bounds.top - verticalAllowance || event.clientY > bounds.bottom + verticalAllowance) return
-
-    if (gesture.pendingIndex != null) {
-      if (event.clientX < trackStart) return
-
-      gesture.pendingIndex = null
-      gesture.transferred = true
-      wordIndexRef.current = targetWordIndex
-      setWordIndex(targetWordIndex)
-      const entryValue = Math.max(0, Math.min(100, ((event.clientX - trackStart) / trackWidth) * 100))
-      applyMarkerPosition(targetWordIndex, entryValue)
-      requestAnimationFrame(() => inputRefs.current[targetWordIndex]?.focus())
-      return
-    }
-
-    const nextValue = Math.max(0, Math.min(100, ((event.clientX - trackStart) / trackWidth) * 100))
-    moveMarker(wordIndex, nextValue)
-  }
-
-  const endContinuousDrag = () => {
-    const gesture = continuousDragRef.current
-    continuousDragRef.current = null
-    if (!gesture || finished) return
-
-    if (gesture.pendingIndex != null) {
-      const nextIndex = gesture.pendingIndex
-      wordIndexRef.current = nextIndex
-      setWordIndex(nextIndex)
-      writeMarkerPosition(nextIndex, 0)
-      requestAnimationFrame(() => inputRefs.current[nextIndex]?.focus())
-      return
-    }
-
-    if (!gesture.transferred) return
-
-    // Keep the marker exactly where the child released it.
-  }
-
-  const moveToPreviousWord = (index) => {
-    if (index !== wordIndex || index <= 0) return
-
-    const previousIndex = index - 1
-    setFinished(false)
-    const nextPositions = {
-      ...positionsRef.current,
-      [index]: 0,
-      [previousIndex]: 100,
-    }
-    positionsRef.current = nextPositions
-    setPositions(nextPositions)
-    wordIndexRef.current = previousIndex
-    setWordIndex(previousIndex)
-    requestAnimationFrame(() => inputRefs.current[previousIndex]?.focus())
-  }
-
-  const nextSentence = () => {
-    if (sentenceIndex < story.sentences.length - 1) {
-      setSentenceIndex((current) => current + 1)
-    } else {
-      onClose()
-    }
-  }
-
-  return (
-    <main className="reader-shell">
-      <header className="reader-header">
-        <button className="icon-button" onClick={onClose} aria-label="Leave story">
-          <Chevron direction="left" />
-        </button>
-        <div className="reader-meta">
-          <strong>{story.title}</strong>
-          <span>{unitName} {sentenceIndex + 1} of {story.sentences.length}</span>
-        </div>
-        {mode === 'sound'
-          ? <span aria-hidden="true" />
-          : (
-            <button className="icon-button" onClick={speakSentence} aria-label={`Hear this ${mode === 'word' ? 'word' : 'sentence'}`}>
-              <Speaker />
-            </button>
-          )}
-      </header>
-
-      <div className="progress-track" aria-label={`${Math.round(progress)} percent complete`}>
-        <span style={{ transform: `scaleX(${progress / 100})` }} />
-      </div>
-
-      <section
-        ref={readingStageRef}
-        className={`reading-stage ${isPreK ? 'has-picture-cue' : ''}`}
-        aria-label="Reading practice"
-        onPointerMove={continueContinuousDrag}
-        onPointerUp={endContinuousDrag}
-        onPointerCancel={endContinuousDrag}
-      >
-        <div className="page-mark" aria-hidden="true">{String(sentenceIndex + 1).padStart(2, '0')}</div>
-        {isPreK && story.pictures?.[sentenceIndex] && (
-          <ContextPicture
-            pictures={story.pictures}
-            currentIndex={sentenceIndex}
-            progress={pictureProgress}
-            celebrating={finished}
-            mode={mode}
-            target={sentence}
-          />
-        )}
-        <p className="reader-prompt" id="reading-instruction">{prompt}</p>
-        <div className="word-line">
-          {words.map((word, index) => (
-            <WordSlider
-              key={`${sentenceIndex}-${index}-${word}`}
-              word={word}
-              index={index}
-              active={index === wordIndex && !finished}
-              complete={index < wordIndex || finished}
-              cueing={story.level === 'preschool' || story.level === 'kindy'}
-              practiceMode={mode}
-              value={positions[index] ?? 0}
-              onChange={moveMarker}
-              onPrevious={moveToPreviousWord}
-              onGestureStart={startContinuousDrag}
-              inputRef={(element) => { inputRefs.current[index] = element }}
-            />
-          ))}
-        </div>
-
-        <div className={`sentence-done ${finished ? 'visible' : ''}`} aria-live="polite">
-          <span aria-hidden="true">✦</span>
-          <strong>{successMessage}</strong>
-          <button onClick={nextSentence} disabled={!finished}>
-            {nextLabel}
-            <Chevron />
-          </button>
-        </div>
-      </section>
-
-      <footer className="reader-tip">Take your time. Every sound counts.</footer>
-    </main>
-  )
-}
-
-function WordSlider({ word, index, active, complete, cueing, practiceMode, value, onChange, onPrevious, onGestureStart, inputRef }) {
-  const wordParts = word.match(/^([^\p{L}\p{N}]*)([\p{L}\p{N}'’-]+)([^\p{L}\p{N}]*)$/u)
-  const [, prefix = '', readableWord = word, suffix = ''] = wordParts ?? []
-  const normalizedWord = readableWord.toLowerCase()
-  const authoredGroups = cueing ? earlyReaderCueGroups[normalizedWord] : null
-  const wordFeatures = cueing ? earlyReaderWordFeatures[normalizedWord] : null
-  const silentGroupIndexes = new Set(wordFeatures?.silentGroups ?? [])
-  const hasSoundCues = Boolean(authoredGroups?.length && authoredGroups.join('') === readableWord.toLowerCase())
-  let characterOffset = 0
-  const visualGroups = hasSoundCues
-    ? authoredGroups.map((group) => {
-        const text = readableWord.slice(characterOffset, characterOffset + group.length)
-        characterOffset += group.length
-        return text
-      })
-    : [readableWord]
-  let soundIndex = 0
-  const groupModels = visualGroups.map((text, groupIndex) => {
-    const silent = hasSoundCues && silentGroupIndexes.has(groupIndex)
-    return {
-      text,
-      silent,
-      soundIndex: silent ? null : soundIndex++,
-      timing: silent ? null : earlyReaderSoundTiming[authoredGroups?.[groupIndex]],
-    }
-  })
-  const soundGroups = hasSoundCues ? groupModels.filter((group) => !group.silent) : []
-  const soundTimings = soundGroups.map((group) => group.timing)
-  const soundWeights = hasSoundCues
-    ? soundTimings.map((timing) => timing === 'quick' ? 0.62 : 1.65)
-    : [1]
-  let cueWeightOffset = 0
-  const cueCentres = soundWeights.map((weight) => {
-    const centre = cueWeightOffset + weight / 2
-    cueWeightOffset += weight
-    return centre
-  })
-  const firstCueCentre = cueCentres[0] ?? 0
-  const lastCueCentre = cueCentres.at(-1) ?? firstCueCentre
-  const cuePositions = cueCentres.map((centre) => (
-    lastCueCentre === firstCueCentre ? 0 : ((centre - firstCueCentre) / (lastCueCentre - firstCueCentre)) * 100
-  ))
-  const [cueIndex, setCueIndex] = useState(0)
-  const [backPull, setBackPull] = useState(0)
-  const backGestureRef = useRef(null)
-  const currentSoundTiming = soundTimings[cueIndex]
-  let trailingSilentLength = 0
-  if (hasSoundCues) {
-    for (let groupIndex = groupModels.length - 1; groupIndex >= 0; groupIndex -= 1) {
-      if (!groupModels[groupIndex].silent) break
-      trailingSilentLength += groupModels[groupIndex].text.length
-    }
-  }
-  const soundedWidthRatio = hasSoundCues
-    ? Math.max(.35, (readableWord.length - trailingSilentLength) / readableWord.length)
-    : 1
-  const pathWidthRem = hasSoundCues
-    ? Math.max(8, soundWeights.reduce((width, weight) => width + weight * 3.35, 0))
-    : Math.min(15, Math.max(7, readableWord.length * 1.35))
-  const sliderValueText = hasSoundCues
-    ? `${soundGroups[cueIndex]?.text}, ${currentSoundTiming === 'quick' ? 'quick sound' : 'hold this sound'}`
-    : value < 5 ? 'Start of word' : value > 95 ? 'End of word' : `${Math.round(value)} percent through word`
-
-  const moveWithCue = (rawValue) => {
-    const nextValue = Number(rawValue)
-    onChange(index, nextValue)
-  }
-
-  useEffect(() => {
-    if (hasSoundCues && cuePositions.length > 1) {
-      let nearestIndex = 0
-      let nearestDistance = Number.POSITIVE_INFINITY
-
-      cuePositions.forEach((position, groupIndex) => {
-        const distance = Math.abs(position - value)
-        if (distance < nearestDistance) {
-          nearestDistance = distance
-          nearestIndex = groupIndex
-        }
-      })
-
-      setCueIndex(nearestIndex)
-    }
-  }, [value])
-
-  useEffect(() => {
-    if (!active) {
-      backGestureRef.current = null
-      setBackPull(0)
-    }
-  }, [active])
-
-  const beginDrag = (event) => {
-    setBackPull(0)
-    backGestureRef.current = { pointerId: event.pointerId, used: false }
-    onGestureStart(index, event.pointerId)
-    event.currentTarget.setPointerCapture?.(event.pointerId)
-  }
-
-  const trackBackGesture = (event) => {
-    if (!active || index === 0 || backGestureRef.current?.used) return
-
-    const inputBounds = event.currentTarget.getBoundingClientRect()
-    const inputPadding = Number.parseFloat(window.getComputedStyle(event.currentTarget).paddingLeft) || 0
-    const trackStart = inputBounds.left + inputPadding
-    const overshoot = Math.max(0, trackStart - event.clientX)
-    setBackPull(-Math.min(18, overshoot * .45))
-
-    if (overshoot >= 40) {
-      backGestureRef.current.used = true
-      setBackPull(0)
-      onPrevious(index)
-    }
-  }
-
-  const endDrag = () => {
-    setBackPull(0)
-    backGestureRef.current = null
-  }
-
-  return (
-    <div
-      className={`word-unit ${practiceMode === 'sound' ? 'is-sound-practice' : ''} ${active ? 'is-active' : ''} ${complete ? 'is-complete' : ''} ${backPull < 0 ? 'is-pulling-back' : ''}`}
-      style={{
-        '--marker-position': `${value * soundedWidthRatio}%`,
-        '--back-pull': `${backPull}px`,
-        '--sound-track-width': `${soundedWidthRatio * 100}%`,
-        '--word-path-width': `${pathWidthRem}rem`,
-      }}
-    >
-      <span className="word-display" aria-hidden="true">
-        {prefix && <span className="punctuation">{prefix}</span>}
-        <span className="letters">
-          {groupModels.map((group, groupIndex) => (
-            <span
-              key={`${group.text}-${groupIndex}`}
-              className={`${group.silent ? 'is-silent' : ''} ${hasSoundCues && group.text.length > 1 && !group.silent ? 'is-grapheme-team' : ''} ${hasSoundCues && active && group.soundIndex === cueIndex ? 'is-cued' : ''} ${hasSoundCues && !group.silent && (complete || (active && group.soundIndex < cueIndex)) ? 'is-passed' : ''}`}
-            >
-              {group.text}
-            </span>
-          ))}
-        </span>
-        {suffix && <span className="punctuation">{suffix}</span>}
-      </span>
-      <div className="slider-wrap">
-        <span className={`slider-rail ${hasSoundCues ? 'has-sound-groups' : ''}`} aria-hidden="true">
-          <span className="slider-segments">
-            {(hasSoundCues ? soundGroups : [{ text: readableWord }]).map((group, groupIndex) => (
-              <i
-                key={`${group.text}-${groupIndex}`}
-                className={`sound-segment ${hasSoundCues ? `is-${soundTimings[groupIndex]}` : ''} ${hasSoundCues && groupIndex === cueIndex && active ? 'is-current' : ''} ${hasSoundCues && (complete || groupIndex < cueIndex) ? 'is-passed' : ''}`}
-                style={{ flexGrow: soundWeights[groupIndex] }}
-              />
-            ))}
-          </span>
-        </span>
-        {!hasSoundCues && (
-          <span
-            className="slider-progress"
-            style={{ transform: `scaleX(${value / 100})` }}
-            aria-hidden="true"
-          />
-        )}
-        <span className="slider-marker" aria-hidden="true"><i /></span>
-        <input
-          ref={inputRef}
-          type="range"
-          min="0"
-          max="100"
-          step="0.1"
-          value={value}
-          disabled={!active}
-          aria-label={`Read the word ${readableWord}`}
-          aria-describedby="reading-instruction"
-          aria-valuetext={sliderValueText}
-          onPointerDown={beginDrag}
-          onPointerMove={trackBackGesture}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-          onChange={(event) => moveWithCue(event.target.value)}
-          onKeyDown={(event) => {
-            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-            event.preventDefault()
-            if (event.key === 'Home') moveWithCue(0)
-            if (event.key === 'End') moveWithCue(100)
-            if (event.key === 'ArrowLeft' && value <= 0 && index > 0) onPrevious(index)
-            else if (event.key === 'ArrowLeft') moveWithCue(Math.max(0, value - 10))
-            if (event.key === 'ArrowRight') moveWithCue(Math.min(100, value + 10))
-          }}
-        />
-      </div>
-    </div>
-  )
-}
 
 createRoot(document.getElementById('root')).render(<App />)

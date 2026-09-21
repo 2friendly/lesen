@@ -17,6 +17,7 @@ export const earlyReaderCueGroups = {
   big: ['b', 'i', 'g'],
   by: ['b', 'y'],
   can: ['c', 'a', 'n'],
+  c: ['c'],
   cat: ['c', 'a', 't'],
   frog: ['f', 'r', 'o', 'g'],
   goes: ['g', 'oe', 's'],
@@ -24,6 +25,7 @@ export const earlyReaderCueGroups = {
   green: ['g', 'r', 'ee', 'n'],
   goose: ['g', 'oo', 's', 'e'],
   had: ['h', 'a', 'd'],
+  h: ['h'],
   hat: ['h', 'a', 't'],
   he: ['h', 'e'],
   her: ['h', 'er'],
@@ -51,6 +53,7 @@ export const earlyReaderCueGroups = {
   pup: ['p', 'u', 'p'],
   quick: ['qu', 'i', 'ck'],
   rat: ['r', 'a', 't'],
+  r: ['r'],
   red: ['r', 'e', 'd'],
   run: ['r', 'u', 'n'],
   s: ['s'],
@@ -125,7 +128,7 @@ export const earlyReaderSoundTiming = {
 
 export const stories = [
   {
-    id: 'first-sounds', level: 'preschool', mode: 'sound', title: 'First Sounds', art: 'm',
+    id: 'first-sounds', level: 'preschool', mode: 'sound', title: 'First Sounds', art: '🍎',
     sentences: ['m', 's', 'a', 't'],
     pictures: [
       { symbol: '🌙', label: 'moon' },
@@ -135,7 +138,7 @@ export const stories = [
     ],
   },
   {
-    id: 'more-sounds', level: 'preschool', mode: 'sound', title: 'More Sounds', art: 'n',
+    id: 'more-sounds', level: 'preschool', mode: 'sound', title: 'More Sounds', art: '🐟',
     sentences: ['n', 'p', 'i', 'f'],
     pictures: [
       { symbol: '🪺', label: 'nest' },
@@ -145,7 +148,16 @@ export const stories = [
     ],
   },
   {
-    id: 'tiny-words', level: 'preschool', mode: 'word', title: 'Tiny Words', art: 'cat',
+    id: 'ready-for-words', level: 'preschool', mode: 'sound', title: 'Ready for Words', art: '🐈',
+    sentences: ['c', 'h', 'r'],
+    pictures: [
+      { symbol: '🐈', label: 'cat' },
+      { symbol: '🎩', label: 'hat' },
+      { symbol: '🐀', label: 'rat' },
+    ],
+  },
+  {
+    id: 'tiny-words', level: 'preschool', mode: 'word', title: 'Tiny Words', art: '🗺️',
     sentences: ['cat', 'hat', 'map', 'rat'],
     pictures: [
       { symbol: '🐈', label: 'cat' },
@@ -154,15 +166,15 @@ export const stories = [
       { symbol: '🐀', label: 'rat' },
     ],
   },
-  { id: 'mud-pup', level: 'kindy', title: 'Mud Pup', art: '♣', sentences: ['Pip the pup sat in mud.', 'His paws got wet.', 'Pip had a quick bath.'] },
-  { id: 'moon-cat', level: 'kindy', title: 'The Moon Cat', art: '☾', sentences: ['A cat sat by the moon.', 'She saw a small star.', 'The star winked at her.'] },
-  { id: 'frog-hop', level: 'kindy', title: 'Hop, Frog!', art: '✦', sentences: ['A green frog can hop.', 'He hops past a log.', 'Splash goes the frog!'] },
-  { id: 'loose-goose', level: 'kindy', title: 'Loose Goose', art: 'oo', sentences: ['A goose got loose.', 'The goose is in mud.', 'The goose had a bath.'] },
-  { id: 'seed', level: 'year1', title: 'The Brave Seed', art: '❧', sentences: ['A little seed slept underground.', 'Warm rain tapped the soil.', 'At last, a green shoot appeared.'] },
-  { id: 'kite', level: 'year1', title: 'Kite Day', art: '◇', sentences: ['Mina made a bright orange kite.', 'The wind lifted it over the trees.', 'She held the string tight.'] },
-  { id: 'night-bus', level: 'year1', title: 'The Night Bus', art: '▰', sentences: ['The last bus rolled down our street.', 'Its windows glowed like tiny moons.', 'Dad and I waved goodnight.'] },
-  { id: 'crab', level: 'year2', title: 'Crab’s New Home', art: '≋', sentences: ['Cora the crab needed a larger shell.', 'She searched beneath the quiet rocks.', 'A smooth striped shell fit perfectly.'] },
-  { id: 'cloud', level: 'year2', title: 'Cloud Collector', art: '☁', sentences: ['Noah liked to name the passing clouds.', 'One looked exactly like a dancing bear.', 'Another became a ship with silver sails.'] },
-  { id: 'garden', level: 'year3', title: 'The Secret Garden Gate', art: '✤', sentences: ['Behind the old shed, Amari discovered a tiny blue gate.', 'It opened into a garden filled with humming flowers.', 'At the centre stood a tree with golden leaves.'] },
-  { id: 'lighthouse', level: 'year3', title: 'Lighthouse Mystery', art: '◒', sentences: ['Each evening, the lighthouse flashed across the restless sea.', 'One stormy night, the bright beam suddenly disappeared.', 'Zoe pulled on her boots and hurried up the hill.'] },
+  { id: 'mud-pup', level: 'kindy', title: 'Mud Pup', art: '🐶', sentences: ['Pip the pup sat in mud.', 'His paws got wet.', 'Pip had a quick bath.'] },
+  { id: 'moon-cat', level: 'kindy', title: 'The Moon Cat', art: '🌙', sentences: ['A cat sat by the moon.', 'She saw a small star.', 'The star winked at her.'] },
+  { id: 'frog-hop', level: 'kindy', title: 'Hop, Frog!', art: '🐸', sentences: ['A green frog can hop.', 'He hops past a log.', 'Splash goes the frog!'] },
+  { id: 'loose-goose', level: 'kindy', title: 'Loose Goose', art: '🪿', sentences: ['A goose got loose.', 'The goose is in mud.', 'The goose had a bath.'] },
+  { id: 'seed', level: 'year1', title: 'The Brave Seed', art: '🌱', sentences: ['A little seed slept underground.', 'Warm rain tapped the soil.', 'At last, a green shoot appeared.'] },
+  { id: 'kite', level: 'year1', title: 'Kite Day', art: '🪁', sentences: ['Mina made a bright orange kite.', 'The wind lifted it over the trees.', 'She held the string tight.', 'Then the wind dropped, and the kite landed in Dad’s hat.', 'Mina laughed as they untangled the string.'] },
+  { id: 'night-bus', level: 'year1', title: 'The Night Bus', art: '🚌', sentences: ['The last bus rolled down our street.', 'Its windows glowed like tiny moons.', 'Dad and I waved goodnight.'] },
+  { id: 'crab', level: 'year2', title: 'Crab’s New Home', art: '🦀', sentences: ['Cora the crab needed a larger shell.', 'She searched beneath the quiet rocks.', 'A smooth striped shell fit perfectly.'] },
+  { id: 'cloud', level: 'year2', title: 'Cloud Collector', art: '☁️', sentences: ['Noah liked to name the passing clouds.', 'One looked exactly like a dancing bear.', 'Another became a ship with silver sails.'] },
+  { id: 'garden', level: 'year3', title: 'The Secret Garden Gate', art: '🌳', sentences: ['Behind the old shed, Amari discovered a tiny blue gate.', 'It opened into a garden filled with humming flowers.', 'At the centre stood a tree with golden leaves.', 'Under its branches, a wooden sign read: Please help us grow.', 'Amari fetched a watering can and gave every flower a drink.', 'The next morning, one tiny golden leaf waited by the gate.'] },
+  { id: 'lighthouse', level: 'year3', title: 'Lighthouse Mystery', art: '🔦', sentences: ['Each evening, the lighthouse flashed across the restless sea.', 'One stormy night, the bright beam suddenly disappeared.', 'Zoe pulled on her boots and hurried up the hill with Dad.', 'Inside, the keeper was searching for his spare lamp in the dark.', 'Zoe shone her torch while Dad helped him fit it into place.', 'The beam swept across the waves again, guiding a fishing boat home.'] },
 ]
